@@ -1,18 +1,3 @@
-# DE stemmed
-
-
-# Generates corpus from textfile
-# cleans data
-# remove punctuation
-# create document term matrix
-# remove sparse terms
-# analyze term frequency 
-# run alpha and beta optimization analyses
-# run perplexity analysis for number of topic optimisation 
-# set number of topics
-# run topic model
-# inspect output 
-
 1) load packages
 install.packages('tm')
 install.packages('topicmodels')
