@@ -40,10 +40,10 @@ options(scipen = 999) # so that we don't get annoying scientific notation
 
 
 2) Load articles from csv file
-de_data <- read.csv("~/Documents/df/de data/all_de")
+data <- read.csv("~/data")
 
 # Extract article text and convert to tm corpus data structure 
-de_articles.text = tm::Corpus(tm::VectorSource(de_data$text)) 
+articles.text = tm::Corpus(tm::VectorSource(data$text)) 
 
 3) Clean text data 
 
@@ -53,12 +53,12 @@ nonwords = c('ccaaca', 'ccb', 'ccbc', 'ccf','ach', 'etc', 'eg', 'vrri', 'wtc', '
 # list of custom stop words to extract
 customstopwords = c('www', 'nhttp', 'http', 'com', 'org', 'co', 'nhttps', 'https', 'html', 'pdf', 'nwww') 
 
-# list of other stop words not caught by tm algorithm
-domainwords =  c('fã¼','daten','dass','neu','neue','neuen','mehr','müssen','machen','sagt','viel','schon','mai','gibt','sei','etwa','wer','wo','wem','immer','bereit','dabei','beim','an','der','die','das','den','des','dem','sowie','dafür','ganz','dürfen','fall','sollen','allerdings','auf','jeder','jedes','jeden','jedes','jede','zudem','damit','dazu','sollten','sollen','darüber','darauf','wurden','deren','davon','jedoch','viel','gilt','seit','wurde','wurdet','wurdest','würden','würde','würdet','würdest','viele','dsgvo','xaâ','¼ber','nnen','sagte','lã','mã','groã','mã¼ssen','hã','rden','xfen','unserer','geschã','bisher','vielen','unternehmen','datenschutzgrundverordnung','datenschutz','xfe','xft')
+# list of other stop words not caught by tm algorithm - typically modal verbs, context specific words, etc.
+domainwords = c('like','would','could','data','facebook')
 
 # transform all terms to lower case, remove numbers, strip whitespace
 # remove stop words and domain words
-de_articles.text = de_articles.text %>%
+articles.text = articles.text %>%
   tm_map(., content_transformer(tolower)) %>% # 
   tm_map(., removeNumbers) %>%  
   tm_map(., stripWhitespace)
@@ -66,35 +66,32 @@ de_articles.text = de_articles.text %>%
   tm_map(.,removeWords, nonwords) %>%
   tm_map(.,removeWords, domainwords) %>%
   tm_map(., stripWhitespace) 
-  tm_map(., removeWords, stopwords('german')) %>%
+  tm_map(., removeWords, stopwords('english')) %>%
   
   # included for the stemmed models, not for the unstemmed models
   tm_map(., rBDA::stemText) 
 
 # remove punctuation, remove loner leftover terms
-de_articles.text = de_articles.text %>%
+articles.text = articles.text %>%
   tm_map(., rBDA::replacePunctuation) %>% 
   tm_map(., rBDA::replaceSingleWords) %>% 
   tm_map(., stripWhitespace)
 
 # run stemming algorithm once more, if building stemmed model
-de_articles.text = de_articles.text %>%
+articles.text = articles.text %>%
   tm_map(., rBDA::stemText)
-
 
 4) Create document term matrix with correlations for words the co-occur 
 # Create DTM
-dtm.de_articles = tm::DocumentTermMatrix(de_articles.text)
+dtm.articles = tm::DocumentTermMatrix(articles.text)
 
 # remove sparse terms
-dtm.sparse = tm::removeSparseTerms(dtm.de_articles, 0.99) # adjust to 0.9, 0.99, 0.9999 ...
+dtm.sparse = tm::removeSparseTerms(dtm.articles, 0.99) # adjust to 0.9, 0.99, 0.9999 ...
 
 #  Calculate word prevalence statistics 
 term_freq = data.frame(term=names(colSums(as.matrix(dtm.sparse))),
                        frequency = colSums(as.matrix(dtm.sparse))) %>%
   arrange(desc(frequency))
-
-
 
 # Plot the word frequencies as a bar chart
 tf=term_freq %>%
@@ -102,11 +99,9 @@ tf=term_freq %>%
   dplyr::mutate(term = factor(term, levels = term[order(desc(frequency))])) %>% # order the variable so that it is plotted in descending order
   ggplot2::ggplot(aes(term,frequency)) + 
   ylab('Frequency') +
-  ggtitle('DE data: top 20 terms (stemmed)') +
   geom_bar(stat='identity', fill = 'light blue') +
   theme(axis.text.x=element_text(angle=75, hjust=1),     
   axis.title.x = element_blank()) 
-
 
 5) Fit hyperparameters: k, alpha, beta
 
