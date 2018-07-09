@@ -1,0 +1,148 @@
+1) Install and load packages
+#install.packages('tidyr')
+#install.packages('tidytext')
+#install.packages('dplyr')
+#install.packages('ggplot2')
+#install.packages('cowplot')
+#install.packages('lsa')
+#install.packages('igraph')
+
+#library(tidyr) # data manipulation
+#library(dplyr) # yet more data manipulation
+#library(tidytext) # more data manipulation (this time specifically for text)
+#library(ggplot2) # for making nice looking plots
+#library(lsa) # for calculating cosine values
+#library(cowplot) # makes ggplots look nice without having to do lots of work
+#library(igraph) # for making network graphs
+
+options(scipen = 999) # so that we don't get annoying scientific notation
+
+
+2) Load data from topic modelling run
+load("~/data.RData") 
+
+# load article data
+data <- read.csv("~/data.csv")
+
+
+# Prepare data
+topicdf = as.data.frame(posterior(ldaOut.clean.unstemmed)$topics)
+
+# drop any unnecessary topics
+topicdf = topicdf[,-c(3)]
+
+# insert selected topic names here 
+colnames(topicdf) = c('User Guidance','Jurisdiction/Time','Gov vs Tech','Security','Time','Consumer','FBCA','Consequences','Global','Implementation','Industry','Explanations')
+
+# fix date entries
+data$use_date = as.Date(data$new_date,'%d.%m.%y')
+
+
+3) Analyze data
+
+## 1. topic prevalence fluctuations over time
+# make a new df for topics/time
+topics_time = topicdf 
+
+# add the date to the dataframe
+topics_time$date = data_copy$use_date
+
+topics_time = topics_time %>% # make data 'long'
+  tidyr::gather(key = topic, 
+  value = probability, -date)
+
+topics_time = topics_time %>%
+  group_by(date, topic) %>% # group into each day/topic combo
+  summarise(tot = sum(probability)) # take the sum of the topic probabilities for each day/topic combo
+
+# pair topics with distinct colours 
+group.colors = c("User Guidance" = "slateblue1", 
+                "Jurisdiction/Time" = "orange", 
+                "FBCA"= "goldenrod", 
+                "Consequences" = "red", 
+                "Global" = "springgreen", 
+                "Implementation" = "cyan", 
+                "Industry" = "blue", 
+                "Explanations" = "grey", 
+                "Gov vs Tech" = "hotpink", 
+                "Security" = "grey40",
+                "Time" = "darkviolet",
+                "Consumer" = "indianred4")
+
+# convert to dataframe
+group.colors = as.data.frame(group.colors) 
+
+# make a 'topic' variable; the row names are the topic labels
+group.colors$topic = as.character(rownames(group.colors)) 
+
+# reset the names of the columns
+colnames(group.colors) = c('colors', 'topic') 
+group.colors$colors = as.character(group.colors$colors) 
+
+# Populate topics_time with the colors we have assigned to each topic
+topics_time = base::merge(topics_time, group.colors, by = 'topic')
+
+# Plot graph using the colors we have fixed
+emergence = ggplot2::ggplot(topics_time, aes(date, tot, group = topic, color = topic)) + 
+  geom_line() +
+  ggtitle('Emergence of Topics (DE Unst)') +
+  ylab('Number of documents') +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(hjust=1, angle=45),
+        legend.position = 'none') +
+  scale_color_manual(values = group.colors$colors) # we can now stipulate the colors manually
+
+## 2. Topic proportions 
+# dataframe of the total prevalence of each topic
+topic.prevalence = data.frame(colSums(topicdf)) 
+colnames(topic.prevalence) = 'prevalence' 
+
+topic.prevalence$topic = row.names(topic.prevalence)
+
+# merge the colours into the dataset
+topic.prevalence = base::merge(topic.prevalence, group.colors, by = 'topic') 
+
+prev = ggplot2::ggplot(topic.prevalence, aes(topic, prevalence)) +
+  geom_bar(stat = 'identity', fill = topic.prevalence$colors) + # use the colors for the bars which we merged into topic.prevalence
+  xlab('Topics') +
+  ylab('Number of documents') +
+  theme(axis.title.x = element_blank(),
+    axis.text.x = element_text(hjust=1, angle=75))
+prev
+
+### 3. topic connections
+## 3.1 topics connected based on co-occurence in documents
+# 3.1.1 cosine matrix plot
+# Prepare the data
+
+# convert to a matrix (needed for the cosine measurement)
+topicdf_m = as.matrix(topicdf)
+
+# cosine similarity calculated over the columns of a matrix
+cos_result = lsa::cosine(topicdf_m) 
+cos_result = data.matrix(cos_result)
+
+
+# Plot the cosine values as a heat map matrix
+corrp = corrplot::corrplot(cos_result, # plot of cosine similarity based on topic occurence in petitions
+         cl.lim = c(0, 1), # only show positive values - in this case, we can't have negative cosine values 
+         #method = 'number', number.cex = 0.5,
+         method = 'circle',
+         type = 'lower',
+         tl.col = 'black', # the default color is red for some odd reason
+         diag = F) # don't show diagonal values (always equal to 1)
+
+# 3.1.2 cosine network plot
+# Make a network graph from the cosine values
+net = graph_from_adjacency_matrix(cos_result, mode = 'undirected', weighted = T)
+
+# remove loops and multiple values
+net = simplify(net, remove.loops=T, remove.multiple = T)
+
+edges = as_edgelist(net)
+nodes = components(net)$membership
+edges=as.data.frame(edges)
+edges$weights = E(net)$weight
+
+write.csv(edges, file = paste("edges.csv"))
+write.csv(nodes, file = paste("nodes.csv"))
