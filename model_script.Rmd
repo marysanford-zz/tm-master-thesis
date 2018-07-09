@@ -3,6 +3,7 @@
 # Author: Mary Sanford, Bertie Vidgen
 # Email: mpsanford17@gmail.com
 
+# Note: This code is derived from scripts written by Bertie Vidgen for a workshop on topic modelling given at the Oxford Internet Institute on 23-24 April 2018.
 
 1) load packages
 install.packages('tm')
