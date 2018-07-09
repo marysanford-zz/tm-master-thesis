@@ -1,6 +1,6 @@
 # Script name: model_script
 # Description: Load and clean text, optimise hyperparatemers, run model
-# Author: Mary Sanford
+# Author: Mary Sanford, Bertie Vidgen
 # Email: mpsanford17@gmail.com
 
 
