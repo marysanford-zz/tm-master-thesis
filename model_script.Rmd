@@ -1,3 +1,9 @@
+# Script name: model_script
+# Description: Load and clean text, optimise hyperparatemers, run model
+# Author: Mary Sanford
+# Email: mpsanford17@gmail.com
+
+
 1) load packages
 install.packages('tm')
 install.packages('topicmodels')
