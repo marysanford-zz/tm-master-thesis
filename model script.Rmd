@@ -1,0 +1,226 @@
+# DE stemmed
+
+
+# Generates corpus from textfile
+# cleans data
+# remove punctuation
+# create document term matrix
+# remove sparse terms
+# analyze term frequency 
+# run alpha and beta optimization analyses
+# run perplexity analysis for number of topic optimisation 
+# set number of topics
+# run topic model
+# inspect output 
+
+1) load packages
+install.packages('tm')
+install.packages('topicmodels')
+install.packages('tidyr')
+install.packages('tidytext')
+install.packages('dplyr')
+install.packages('ggplot2')
+install.packages('cowplot')
+install.packages('devtools')
+install.pacakges('ldatuning')
+
+library(tm) # really useful for NLP in R
+library(tidyr) # data manipulation
+library(topicmodels) # the good stuff for topic modelling
+library(tidytext) # more data manipulation (this time specifically for text)
+library(dplyr) # yet more data manipulation
+library(ggplot2) # for making nice looking plots
+library(cowplot) # makes ggplots look nice without having to do lots of work
+library(devtools) # so we can download the package we made for this class
+library(ldatuning) # additional parameter optimisation package 
+
+devtools::install_github("bvidgen/rBDA", force = F); library("rBDA") 
+# some easy-to-use functions we made for fitting topic models
+options(scipen = 999) # so that we don't get annoying scientific notation
+
+
+2) Load articles from csv file
+de_data <- read.csv("~/Documents/df/de data/all_de")
+
+# Extract article text and convert to tm corpus data structure 
+de_articles.text = tm::Corpus(tm::VectorSource(de_data$text)) 
+
+3) Clean text data 
+
+# list of non words to extract
+nonwords = c('ccaaca', 'ccb', 'ccbc', 'ccf','ach', 'etc', 'eg', 'vrri', 'wtc', 'xxx','tey', 'ude', 'rnrnthe', 'said', 'eim','laney','cockroachdb','raimund')
+
+# list of custom stop words to extract
+customstopwords = c('www', 'nhttp', 'http', 'com', 'org', 'co', 'nhttps', 'https', 'html', 'pdf', 'nwww') 
+
+# list of other stop words not caught by tm algorithm
+domainwords =  c('fã¼','daten','dass','neu','neue','neuen','mehr','müssen','machen','sagt','viel','schon','mai','gibt','sei','etwa','wer','wo','wem','immer','bereit','dabei','beim','an','der','die','das','den','des','dem','sowie','dafür','ganz','dürfen','fall','sollen','allerdings','auf','jeder','jedes','jeden','jedes','jede','zudem','damit','dazu','sollten','sollen','darüber','darauf','wurden','deren','davon','jedoch','viel','gilt','seit','wurde','wurdet','wurdest','würden','würde','würdet','würdest','viele','dsgvo','xaâ','¼ber','nnen','sagte','lã','mã','groã','mã¼ssen','hã','rden','xfen','unserer','geschã','bisher','vielen','unternehmen','datenschutzgrundverordnung','datenschutz','xfe','xft')
+
+# transform all terms to lower case, remove numbers, strip whitespace
+# remove stop words and domain words
+de_articles.text = de_articles.text %>%
+  tm_map(., content_transformer(tolower)) %>% # 
+  tm_map(., removeNumbers) %>%  
+  tm_map(., stripWhitespace)
+  tm_map(., removeWords, customstopwords) %>%
+  tm_map(.,removeWords, nonwords) %>%
+  tm_map(.,removeWords, domainwords) %>%
+  tm_map(., stripWhitespace) 
+  tm_map(., removeWords, stopwords('german')) %>%
+  
+  # included for the stemmed models, not for the unstemmed models
+  tm_map(., rBDA::stemText) 
+
+# remove punctuation, remove loner leftover terms
+de_articles.text = de_articles.text %>%
+  tm_map(., rBDA::replacePunctuation) %>% 
+  tm_map(., rBDA::replaceSingleWords) %>% 
+  tm_map(., stripWhitespace)
+
+# run stemming algorithm once more, if building stemmed model
+de_articles.text = de_articles.text %>%
+  tm_map(., rBDA::stemText)
+
+
+4) Create document term matrix with correlations for words the co-occur 
+# Create DTM
+dtm.de_articles = tm::DocumentTermMatrix(de_articles.text)
+
+# remove sparse terms
+dtm.sparse = tm::removeSparseTerms(dtm.de_articles, 0.99) # adjust to 0.9, 0.99, 0.9999 ...
+
+#  Calculate word prevalence statistics 
+term_freq = data.frame(term=names(colSums(as.matrix(dtm.sparse))),
+                       frequency = colSums(as.matrix(dtm.sparse))) %>%
+  arrange(desc(frequency))
+
+
+
+# Plot the word frequencies as a bar chart
+tf=term_freq %>%
+  head(term_freq, n = 20) %>% # take just the top 20 terms
+  dplyr::mutate(term = factor(term, levels = term[order(desc(frequency))])) %>% # order the variable so that it is plotted in descending order
+  ggplot2::ggplot(aes(term,frequency)) + 
+  ylab('Frequency') +
+  ggtitle('DE data: top 20 terms (stemmed)') +
+  geom_bar(stat='identity', fill = 'light blue') +
+  theme(axis.text.x=element_text(angle=75, hjust=1),     
+  axis.title.x = element_blank()) 
+
+
+5) Fit hyperparameters: k, alpha, beta
+
+folds = 5 
+
+# Fit topics (K) using perplexity
+k.values = seq(5,20,by=1)
+topics.perplexity = rBDA::fit.topics.perplexity(dtm = dtm.sparse, 
+                                                fold = folds, 
+                                                k.values = k.values)
+
+
+# Visualise perplexity vs number of topics
+rBDA::plot_perplexity(data.frame = topics.perplexity, 
+                      value.write = 'K')
+
+# k set according to Kaiser's rule 
+
+# Fit alpha
+alpha.values = c(0.0001, 0.001, seq(from = 0.1, to = 1, by = 0.1))
+alpha.perplexity = rBDA::fit.alpha.perplexity(dtm = dtm.sparse,
+                                              fold = folds,
+                                              k = k,
+                                              alpha.values = alpha.values)
+
+## Visualise perplexity vs alpha
+rBDA::plot_perplexity(data.frame = alpha.perplexity, 
+                      value.write = 'Alpha') 
+
+min.alpha = colnames(alpha.perplexity)[which.min(colMeans(alpha.perplexity))]
+rBDA::plot_perplexity(data.frame = alpha.perplexity, 
+                      value.write = 'Alpha',
+                      logx = T,
+                      xintercept.write = min.alpha)
+
+# Fit beta
+beta.values = c(0.0001, 0.001, 0.005, seq(from = 0.1, to = 1, by = 0.1))
+beta.perplexity = rBDA::fit.beta.perplexity(dtm = dtm.sparse, 
+                                            folds = folds,
+                                            beta.values,
+                                            k = k, # use the value of k we calculated earlier
+                                            alpha = min.alpha) # use the value of alpha we calculated earlier
+
+min.beta = colnames(beta.perplexity)[which.min(colMeans(beta.perplexity))] 
+rBDA::plot_perplexity(data.frame = beta.perplexity, 
+                      value.write = 'Beta',
+                      logx = T,
+                      xintercept.write = 0.1)
+
+
+
+
+6) Implement topic model
+
+# number of topics 
+k = k 
+
+ldaOut.clean = topicmodels::LDA(dtm.sparse, 
+                                k, 
+                                method='Gibbs', # the sampling method we use - Gibbs sampling is very widely used
+                                control=list(
+                                  alpha = min.alpha, # documents/topics distribution
+                                  delta = min.beta, # topics/words distribution
+                                  nstart = 5, # the number of repeated random starts, if best=T then only the best fitting one is kept
+                                  seed = list(1,2,3,4,5), # keep a record of the set seeds for random starts to ensure replicability
+                                  best = TRUE, # keep only the best fitted random start
+                                  burnin = 4000, # number of omitted Gibbs iterations at the start of the sampling
+                                  iter = 2000,  # how many iterations for the Gibbs sampler
+                                  thin = 500)) # how many iterations ommitted in-between Gibbs samples
+
+## 1. Get the top terms in each topic
+ldaOut.topics = as.data.frame(terms(ldaOut.clean, 25)) 
+
+# transpose
+ldaOut.topcs = data.frame(t(ldaOut.topics))
+
+
+
+## 2. Get the entire topic distributions over words
+topics.words.dist = tidytext::tidy(ldaOut.clean, matrix='beta')
+
+# make the data 'short'
+topics.words.dist = tidyr::spread(topics.words.dist, term, beta) 
+
+# transpose 
+topics.words.dist = data.frame(t(topics.words.dist)) 
+
+
+## 3. Get the topic distribution for each article
+topicdf.stemmed = as.data.frame(posterior(ldaOut.clean)$topics)
+
+# each row is an article
+# columns are the ten topics
+# each row sums to one - as each article is a combination of the six topics
+
+## 4. See which topics are most prevalent
+topic.prevalence.stemmed = data.frame(colSums(topicdf.stemmed))
+
+colnames(topic.prevalence.stemmed) = 'prevalence'
+
+topic.prevalence.stemmed$topic = row.names(topic.prevalence.stemmed); row.names(topic.prevalence.stemmed) = 1:12 
+
+prev = ggplot2::ggplot(topic.prevalence.stemmed, aes(topic, prevalence)) +
+  geom_bar(stat = 'identity') +
+  xlab('Topics') +
+  ylab('Prevalence') +
+  ggtitle('DE topic prevalence (stemmed)') +
+  theme(axis.text.x = element_text(hjust=1, angle=75, family = "Trebuchet MS", size=10)) # angles the x axis text
+prev
+
+## 5. Check coherence 
+# n.terms = k 
+coherence = rBDA::topic.coherence(ldaOut.clean, dtm.sparse, n.terms = 12)
+
+
+
+```
